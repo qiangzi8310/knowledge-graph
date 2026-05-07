@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>民航知识图谱 - 交互查看器</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f172a; color: #e2e8f0; height: 100vh; display: flex; flex-direction: column; }
+  
+  header { background: #1e293b; padding: 12px 20px; border-bottom: 1px solid #334155; display: flex; align-items: center; gap: 20px; flex-shrink: 0; }
+  header h1 { font-size: 16px; font-weight: 600; color: #f8fafc; }
+  .stats { display: flex; gap: 16px; font-size: 13px; }
+  .stat { display: flex; gap: 6px; }
+  .stat .label { color: #94a3b8; }
+  .stat .value { color: #38bdf8; font-weight: 600; }
+  
+  #main { display: flex; flex: 1; overflow: hidden; }
+  
+  #sidebar { width: 280px; background: #1e293b; border-right: 1px solid #334155; display: flex; flex-direction: column; overflow: hidden; flex-shrink: 0; }
+  #sidebar h3 { padding: 12px 16px; font-size: 12px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid #334155; }
+  
+  #search { padding: 10px; border-bottom: 1px solid #334155; }
+  #search input { width: 100%; padding: 8px 12px; background: #0f172a; border: 1px solid #334155; border-radius: 6px; color: #e2e8f0; font-size: 13px; outline: none; }
+  #search input:focus { border-color: #38bdf8; }
+  
+  #node-list { flex: 1; overflow-y: auto; }
+  .node-item { padding: 10px 16px; border-bottom: 1px solid #1e293b; cursor: pointer; transition: background 0.15s; }
+  .node-item:hover { background: #334155; }
+  .node-item.active { background: #1e3a5f; border-left: 3px solid #38bdf8; }
+  .node-item .reg { font-size: 11px; color: #94a3b8; margin-bottom: 2px; }
+  .node-item .title { font-size: 13px; color: #e2e8f0; font-weight: 500; }
+  .node-item .ch { font-size: 11px; color: #64748b; margin-top: 2px; }
+  
+  #graph-container { flex: 1; position: relative; }
+  #graph { width: 100%; height: 100%; }
+  
+  #panel { position: absolute; top: 16px; right: 16px; width: 320px; background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 16px; display: none; max-height: calc(100% - 32px); overflow-y: auto; }
+  #panel.visible { display: block; }
+  #panel h2 { font-size: 14px; font-weight: 600; margin-bottom: 12px; color: #f8fafc; }
+  #panel .field { margin-bottom: 10px; }
+  #panel .field .label { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 2px; }
+  #panel .field .value { font-size: 13px; color: #e2e8f0; }
+  #panel .tags { display: flex; flex-wrap: wrap; gap: 4px; }
+  #panel .tag { background: #334155; color: #94a3b8; font-size: 11px; padding: 2px 8px; border-radius: 4px; }
+  #panel .refs { margin-top: 8px; }
+  #panel .ref-item { background: #0f172a; border: 1px solid #334155; padding: 6px 10px; border-radius: 4px; margin-bottom: 4px; font-size: 12px; cursor: pointer; }
+  #panel .ref-item:hover { border-color: #38bdf8; color: #38bdf8; }
+  #panel .close { position: absolute; top: 12px; right: 12px; background: none; border: none; color: #64748b; cursor: pointer; font-size: 18px; }
+
+  .legend { display: flex; gap: 12px; padding: 8px 16px; border-top: 1px solid #334155; font-size: 11px; }
+  .legend-item { display: flex; align-items: center; gap: 4px; }
+  .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+  
+  /* Force graph styles */
+  .node circle { stroke: #fff; stroke-width: 1.5px; cursor: pointer; }
+  .node text { font-size: 10px; fill: #e2e8f0; pointer-events: none; text-anchor: middle; }
+  .link { stroke: #334155; stroke-opacity: 0.6; }
+  .link-label { font-size: 8px; fill: #64748b; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🛩 民航知识图谱</h1>
+  <div class="stats">
+    <div class="stat"><span class="label">节点</span><span class="value" id="stat-nodes">-</span></div>
+    <div class="stat"><span class="label">边</span><span class="value" id="stat-edges">-</span></div>
+    <div class="stat"><span class="label">条款</span><span class="value" id="stat-clauses">-</span></div>
+    <div class="stat"><span class="label">双向引用</span><span class="value" id="stat-bidir">-</span></div>
+  </div>
+</header>
+
+<div id="main">
+  <div id="sidebar">
+    <h3>筛选</h3>
+    <div id="search">
+      <input type="text" id="search-input" placeholder="搜索条款号、章节...如 121.1">
+    </div>
+    <div id="node-list"></div>
+    <div class="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:#2563EB"></div>CCAR-121</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#059669"></div>CCAR-145</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#DC2626"></div>CCAR-21</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#7C3AED"></div>CCAR-26</div>
+    </div>
+  </div>
+  
+  <div id="graph-container">
+    <svg id="graph"></svg>
+    <div id="panel">
+      <button class="close" onclick="closePanel()">×</button>
+      <h2 id="panel-title">-</h2>
+      <div class="field"><div class="label">类型</div><div class="value" id="panel-type">-</div></div>
+      <div class="field"><div class="label">章节</div><div class="value" id="panel-chapter">-</div></div>
+      <div class="field"><div class="label">摘要</div><div class="value" id="panel-summary">-</div></div>
+      <div class="field"><div class="label">标签</div><div class="tags" id="panel-tags"></div></div>
+      <div class="refs" id="panel-refs"></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script>
+const COLOR_MAP = {
+  'CCAR-121': '#2563EB',
+  'CCAR-145': '#059669', 
+  'CCAR-21': '#DC2626',
+  'CCAR-26': '#7C3AED',
+  'chapter': '#64748b',
+  'regulation': '#f59e0b'
+};
+
+let graphData = null;
+let filteredNodes = [];
+let simulation = null;
+
+// Load graph data
+fetch('knowledge_graph.json')
+  .then(r => r.json())
+  .then(data => {
+    graphData = data;
+    initGraph(data);
+    buildSidebar(data);
+    updateStats(data);
+  })
+  .catch(e => console.error('Failed to load graph:', e));
+
+function updateStats(data) {
+  const clauses = data.nodes.filter(n => n.type === 'clause');
+  const bidir = data.edges.filter(e => e.relation === '引用').length;
+  document.getElementById('stat-nodes').textContent = data.metadata.total_nodes;
+  document.getElementById('stat-edges').textContent = data.metadata.total_edges;
+  document.getElementById('stat-clauses').textContent = clauses.length;
+  document.getElementById('stat-bidir').textContent = bidir;
+}
+
+function initGraph(data) {
+  const container = document.getElementById('graph-container');
+  const svg = d3.select('#graph');
+  const W = container.clientWidth;
+  const H = container.clientHeight;
+  
+  svg.attr('width', W).attr('height', H);
+  
+  // Process edges - only show "引用" type for clarity
+  const edges = data.edges
+    .filter(e => e.relation === '引用')
+    .map(e => ({ ...e, source: e.source, target: e.target }));
+  
+  const nodes = data.nodes.filter(n => n.type === 'clause');
+  
+  simulation = d3.forceSimulation(nodes)
+    .force('link', d3.forceLink(edges).id(d => d.id).distance(60).strength(0.3))
+    .force('charge', d3.forceManyBody().strength(-80))
+    .force('center', d3.forceCenter(W/2, H/2))
+    .force('collision', d3.forceCollide(20));
+  
+  const link = svg.append('g').selectAll('line')
+    .data(edges).join('line')
+    .attr('class', 'link')
+    .attr('stroke-width', 1);
+  
+  const node = svg.append('g').selectAll('g')
+    .data(nodes).join('g')
+    .attr('class', 'node')
+    .call(d3.drag()
+      .on('start', (event, d) => {
+        if (!event.active) simulation.alphaTarget(0.3).restart();
+        d.fx = d.x; d.fy = d.y;
+      })
+      .on('drag', (event, d) => { d.fx = event.x; d.fy = event.y; })
+      .on('end', (event, d) => {
+        if (!event.active) simulation.alphaTarget(0);
+        d.fx = null; d.fy = null;
+      }));
+  
+  node.append('circle')
+    .attr('r', 6)
+    .attr('fill', d => COLOR_MAP[d.regulation] || '#64748b')
+    .on('click', (event, d) => showPanel(d, data));
+  
+  node.append('text')
+    .attr('dy', 15)
+    .text(d => d.clause_number || d.id);
+  
+  simulation.on('tick', () => {
+    link
+      .attr('x1', d => d.source.x)
+      .attr('y1', d => d.source.y)
+      .attr('x2', d => d.target.x)
+      .attr('y2', d => d.target.y);
+    node.attr('transform', d => `translate(${d.x},${d.y})`);
+  });
+}
+
+function showPanel(node, data) {
+  document.getElementById('panel').classList.add('visible');
+  document.getElementById('panel-title').textContent = node.title || node.id;
+  document.getElementById('panel-type').textContent = node.type;
+  document.getElementById('panel-chapter').textContent = node.chapter || '-';
+  document.getElementById('panel-summary').textContent = (node.summary || '-').slice(0, 200);
+  
+  // Tags
+  const tagsEl = document.getElementById('panel-tags');
+  tagsEl.innerHTML = '';
+  (node.tags || []).forEach(t => {
+    const span = document.createElement('span');
+    span.className = 'tag';
+    span.textContent = '#' + t;
+    tagsEl.appendChild(span);
+  });
+  
+  // References
+  const refsEl = document.getElementById('panel-refs');
+  const outRefs = data.edges.filter(e => e.source === node.id && e.relation === '引用');
+  const inRefs = data.edges.filter(e => e.target === node.id && e.relation === '引用');
+  
+  refsEl.innerHTML = '';
+  if (outRefs.length) {
+    const h4 = document.createElement('div');
+    h4.className = 'label';
+    h4.style.marginBottom = '4px';
+    h4.textContent = `→ 引用 (${outRefs.length})`;
+    refsEl.appendChild(h4);
+    outRefs.slice(0,10).forEach(r => {
+      const div = document.createElement('div');
+      div.className = 'ref-item';
+      const target = data.nodes.find(n => n.id === r.target);
+      div.textContent = (target ? target.title : r.target) + ' →';
+      div.onclick = () => { const n = data.nodes.find(x => x.id === r.target); if(n) showPanel(n, data); };
+      refsEl.appendChild(div);
+    });
+  }
+  if (inRefs.length) {
+    const h4 = document.createElement('div');
+    h4.className = 'label';
+    h4.style.marginTop = '8px';
+    h4.textContent = `← 被引用 (${inRefs.length})`;
+    refsEl.appendChild(h4);
+    inRefs.slice(0,10).forEach(r => {
+      const div = document.createElement('div');
+      div.className = 'ref-item';
+      const source = data.nodes.find(n => n.id === r.source);
+      div.textContent = '← ' + (source ? source.title : r.source);
+      div.onclick = () => { const n = data.nodes.find(x => x.id === r.source); if(n) showPanel(n, data); };
+      refsEl.appendChild(div);
+    });
+  }
+}
+
+function closePanel() {
+  document.getElementById('panel').classList.remove('visible');
+}
+
+function buildSidebar(data) {
+  const list = document.getElementById('node-list');
+  const clauses = data.nodes.filter(n => n.type === 'clause').sort((a, b) => a.id.localeCompare(b.id));
+  
+  function render(items) {
+    list.innerHTML = '';
+    items.slice(0, 200).forEach(n => {
+      const div = document.createElement('div');
+      div.className = 'node-item';
+      div.innerHTML = `<div class="reg">${n.regulation} · ${n.chapter || ''}</div>
+        <div class="title">${n.title || n.id}</div>
+        <div class="ch">${(n.summary || '').slice(0, 50)}...</div>`;
+      div.onclick = () => showPanel(n, data);
+      list.appendChild(div);
+    });
+    if (items.length > 200) {
+      const more = document.createElement('div');
+      more.style.padding = '10px 16px';
+      more.style.color = '#64748b';
+      more.style.fontSize = '12px';
+      more.textContent = `显示前200项，共${items.length}项`;
+      list.appendChild(more);
+    }
+  }
+  
+  filteredNodes = clauses;
+  render(clauses);
+  
+  document.getElementById('search-input').addEventListener('input', e => {
+    const q = e.target.value.toLowerCase();
+    const filtered = clauses.filter(n => 
+      (n.id || '').toLowerCase().includes(q) ||
+      (n.title || '').toLowerCase().includes(q) ||
+      (n.chapter || '').toLowerCase().includes(q) ||
+      (n.tags || []).some(t => t.toLowerCase().includes(q))
+    );
+    render(filtered);
+  });
+}
+
+window.addEventListener('resize', () => {
+  if (simulation) {
+    const container = document.getElementById('graph-container');
+    const svg = d3.select('#graph');
+    svg.attr('width', container.clientWidth).attr('height', container.clientHeight);
+    simulation.force('center', d3.forceCenter(container.clientWidth/2, container.clientHeight/2));
+    simulation.alpha(0.3).restart();
+  }
+});
+</script>
+</body>
+</html>

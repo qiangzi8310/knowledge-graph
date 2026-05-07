@@ -1,0 +1,10 @@
+node_modules/
+.venv/
+__pycache__/
+*.pyc
+.openclaw/
+memory/
+*.traineddata
+*.deb
+package-lock.json
+.env
